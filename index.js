@@ -11,6 +11,9 @@
 
 (function () {
   'use strict';
+  // 该标记元素a链接不设置target
+  const NO_TARGET = 'no-target'
+
   // 节流函数，限制函数执行频率
   function throttle(func, delay) {
     let lastCall = 0;
@@ -27,7 +30,32 @@
   //如果链接的pathname只有一个单词，那么就过滤掉，多个单词允许跳转
   function filterShortestPathnames(anchors) {
     anchors.forEach(anchor => {
-      if (anchor.target === '_blank') return
+      // 根据一个a链接，找他的父亲的子元素有没有多个a链接，没有就继续往上找，直到找到那个父亲并return
+      function findCommonParent(anchor, fn) {
+        let current = anchor.parentElement;
+        while (current && current !== document.body) {
+          const anchorCount = current.querySelectorAll('a[href]:not([target=_blank]):not([text-link])').length;
+          if (anchorCount > 1) {
+            break // 找到包含多个 <a> 的父节点
+          }
+          current = current.parentElement; // 向上继续查找
+        }
+        const links = [...current.querySelectorAll('a[href]:not([target=_blank]):not([text-link])')]
+        const flag = links.find(link => link !== anchor && link.innerText !== '' && Number(link.innerText) === Number(link.innerText))
+        fn(links)
+        return flag ? current : null; // 没有找到符合条件的父节点
+      }
+      let parent = null
+      if (anchor.innerText !== '' && Number(anchor.innerText) === Number(anchor.innerText)) {
+        parent = findCommonParent(anchor, links => {
+          links.forEach(link => link.setAttribute(NO_TARGET, true))
+        })
+        if (parent) {
+          parent.setAttribute(NO_TARGET, true)
+        }
+      }
+      if (anchor.target || !anchor.pathname.startsWith('/') || anchor.pathname.length <= 1 || anchor.getAttribute(NO_TARGET)) return
+
       const pathname = anchor.pathname
       if (!pathname) return
       if (pathname.split('/').length > 2) {
@@ -36,6 +64,7 @@
       }
     })
   }
+
   // 如果多个链接search中有重复的key,就允许跳转
   function searchFilterKey(anchors) {
     const map = {}
@@ -59,6 +88,7 @@
     }
     for (const key in map) {
       anchors.forEach(anchor => {
+        if (anchor.getAttribute(NO_TARGET)) return
         if (anchor.search.includes(key) && !anchor.target) {
           anchor.target = '_blank'
           anchor.rel = 'noopener noreferrer';
@@ -68,11 +98,12 @@
   }
   // 修改链接的函数
   function updateLinks() {
-    const anchors = document.querySelectorAll('a[href]:not([target=_blank])');
+    const anchors = document.querySelectorAll(`a[href]:not([target=_blank]):not([text-link])`);
     filterShortestPathnames(anchors)
     searchFilterKey(anchors)
 
     anchors.forEach(function (anchor) {
+      if (anchor.getAttribute(NO_TARGET)) return
       const host = anchor.host
       // 判断链接是否非同源且未设置target='_blank'
 
@@ -82,36 +113,9 @@
         anchor.target = '_blank';
         anchor.rel = 'noopener noreferrer';
       }
-
     });
   }
 
-  // Object.keys(getEventListeners(window)).forEach(eName => {
-  //   if (eName.includes('point') || eName.includes('mouse')) return
-  //   window.addEventListener(eName, e => { console.log(eName) })
-  // })
-
-  // function getListGroup(node) {
-  //   function getGroup(node) {
-  //     if (!node) return
-  //     if (node.nodeName === 'A') {
-  //       node.target = '_blank'
-  //     }
-  //     if (node.shadowRoot) {
-  //       const shadowRoot = node.shadowRoot
-  //       const shadowChildLen = shadowRoot.childNodes.length
-  //       for (let i = 0; i < shadowChildLen; i++) {
-  //         getGroup(shadowRoot.childNodes[i])
-  //       }
-  //     }
-  //     if (!node.children || !node.children.length) return
-  //     const nodeChildLen = node.children.length
-  //     for (let i = 0; i < nodeChildLen; i++) {
-  //       getGroup(node.children[i])
-  //     }
-  //   }
-  //   getGroup(node)
-  // }
 
   // 创建一个MutationObserver实例，用于监听DOM变化
   const observer = new MutationObserver(throttle(updateLinks, 200)); // 200毫秒节流
